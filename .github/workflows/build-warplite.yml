@@ -11,7 +11,7 @@ on:
       ref:
         description: "GitLab branch/tag"
         required: false
-        default: "feature/rebrand-wort"
+        default: "main/warp-lite"
 
 concurrency:
   group: wort-macos
@@ -26,7 +26,7 @@ jobs:
       CARGO_TERM_COLOR: always
       CARGO_BUILD_JOBS: "4"
       HOMEBREW_NO_AUTO_UPDATE: "1"
-      GITLAB_REF: ${{ github.event.client_payload.ref || inputs.ref || 'feature/rebrand-wort' }}
+      GITLAB_REF: ${{ github.event.client_payload.ref || inputs.ref || 'main/warp-lite' }}
       GITLAB_SHA: ${{ github.event.client_payload.sha || '' }}
 
     steps:
@@ -34,9 +34,9 @@ jobs:
         run: |
           set -euo pipefail
           git clone --depth 1 --branch "$GITLAB_REF" \
-            https://gitlab.com/adatcu/warp-lite.git src \
+            https://gitlab.com/adatcu/wort.git src \
             || {
-              git clone --depth 50 https://gitlab.com/adatcu/warp-lite.git src
+              git clone --depth 50 https://gitlab.com/adatcu/wort.git src
               cd src && git checkout "$GITLAB_REF"
             }
           cd src
