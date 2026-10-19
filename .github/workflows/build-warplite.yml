@@ -1,22 +1,20 @@
-name: Build WarpLite from GitLab
+name: Build Wort from GitLab
 
 permissions:
   contents: write
 
 on:
   repository_dispatch:
-    types: [build-warplite]
+    types: [build-warplite]  # keep so existing GitLab trigger still works
   workflow_dispatch:
     inputs:
       ref:
         description: "GitLab branch/tag"
         required: false
-        default: "warp-lite/main"
-  # schedule:
-  #   - cron: "0 6 * * 1"
+        default: "feature/rebrand-wort"
 
 concurrency:
-  group: warplite-macos
+  group: wort-macos
   cancel-in-progress: true
 
 jobs:
@@ -28,7 +26,7 @@ jobs:
       CARGO_TERM_COLOR: always
       CARGO_BUILD_JOBS: "4"
       HOMEBREW_NO_AUTO_UPDATE: "1"
-      GITLAB_REF: ${{ github.event.client_payload.ref || inputs.ref || 'warp-lite/main' }}
+      GITLAB_REF: ${{ github.event.client_payload.ref || inputs.ref || 'feature/rebrand-wort' }}
       GITLAB_SHA: ${{ github.event.client_payload.sha || '' }}
 
     steps:
@@ -73,41 +71,42 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             src/target
-          key: warplite-${{ runner.os }}-${{ hashFiles('src/Cargo.lock', 'src/rust-toolchain.toml') }}
+          key: wort-${{ runner.os }}-${{ hashFiles('src/Cargo.lock', 'src/rust-toolchain.toml') }}
           restore-keys: |
+            wort-${{ runner.os }}-
             warplite-${{ runner.os }}-
 
       - name: Release build
         working-directory: src
         run: cargo build --release --bin warp-oss
 
-      - name: Bundle WarpLite.app and DMG
+      - name: Bundle Wort.app and DMG
         working-directory: src
         run: |
           script/build-warp-lite-app.sh
-          codesign --verify --deep --strict --verbose=2 WarpLite.app || true
-          rm -f WarpLite.dmg WarpLite.app.zip
-          hdiutil create -volname WarpLite -srcfolder WarpLite.app -ov -format UDZO WarpLite.dmg
-          ditto -c -k --sequesterRsrc --keepParent WarpLite.app WarpLite.app.zip
-          hdiutil verify WarpLite.dmg || true
-          ls -lh WarpLite.app WarpLite.dmg WarpLite.app.zip
+          codesign --verify --deep --strict --verbose=2 Wort.app || true
+          rm -f Wort.dmg Wort.app.zip
+          hdiutil create -volname Wort -srcfolder Wort.app -ov -format UDZO Wort.dmg
+          ditto -c -k --sequesterRsrc --keepParent Wort.app Wort.app.zip
+          hdiutil verify Wort.dmg || true
+          ls -lh Wort.app Wort.dmg Wort.app.zip
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: WarpLite-${{ github.run_number }}
+          name: Wort-${{ github.run_number }}
           path: |
-            src/WarpLite.app.zip
-            src/WarpLite.dmg
+            src/Wort.app.zip
+            src/Wort.dmg
           if-no-files-found: error
           retention-days: 14
 
       - name: Checksums
         working-directory: src
         run: |
-          shasum -a 256 WarpLite.app.zip WarpLite.dmg | tee checksums.txt
+          shasum -a 256 Wort.app.zip Wort.dmg | tee checksums.txt
           {
-            echo "## WarpLite CI build"
+            echo "## Wort CI build"
             echo
             echo "- GitLab ref: \`${GITLAB_REF}\`"
             echo "- GitLab SHA: \`${SOURCE_SHA}\`"
@@ -122,12 +121,12 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: warplite-${{ github.run_number }}-${{ env.SOURCE_SHA_SHORT }}
-          name: WarpLite ${{ env.GITLAB_REF }} (${{ env.SOURCE_SHA_SHORT }})
+          tag_name: wort-${{ github.run_number }}-${{ env.SOURCE_SHA_SHORT }}
+          name: Wort ${{ env.GITLAB_REF }} (${{ env.SOURCE_SHA_SHORT }})
           body_path: src/release-body.md
           files: |
-            src/WarpLite.app.zip
-            src/WarpLite.dmg
+            src/Wort.app.zip
+            src/Wort.dmg
             src/checksums.txt
           draft: false
           prerelease: true
