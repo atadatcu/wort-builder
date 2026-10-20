@@ -144,14 +144,16 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Optional: auto-bump https://github.com/atadatcu/homebrew-wort
-      # Create secret HOMEBREW_TAP_TOKEN (PAT with contents:write on that repo).
       - name: Bump Homebrew cask
-        if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
           set -euo pipefail
+          if [ -z "${TAP_TOKEN:-}" ]; then
+            echo "HOMEBREW_TAP_TOKEN not set; skipping cask bump"
+            exit 0
+          fi
+
           git clone --depth 1 \
             "https://x-access-token:${TAP_TOKEN}@github.com/atadatcu/homebrew-wort.git" tap
           cd tap
