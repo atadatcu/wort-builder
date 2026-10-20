@@ -5,7 +5,7 @@ permissions:
 
 on:
   repository_dispatch:
-    types: [build-warplite]  # keep so existing GitLab trigger still works
+    types: [build-warplite] # keep so existing GitLab trigger still works
   workflow_dispatch:
     inputs:
       ref:
@@ -47,6 +47,11 @@ jobs:
           echo "SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           echo "SOURCE_SHA_SHORT=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
           echo "Building $(git rev-parse --short HEAD) ($(git log -1 --pretty=%s))"
+
+      - name: Set Homebrew-friendly version
+        run: |
+          # Plain integer version → tag vN, cask version "N"
+          echo "WORT_VERSION=${{ github.run_number }}" >> "$GITHUB_ENV"
 
       - name: Install build dependencies and pull LFS
         working-directory: src
@@ -94,7 +99,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Wort-${{ github.run_number }}
+          name: Wort-${{ env.WORT_VERSION }}
           path: |
             src/Wort.app.zip
             src/Wort.dmg
@@ -105,12 +110,15 @@ jobs:
         working-directory: src
         run: |
           shasum -a 256 Wort.app.zip Wort.dmg | tee checksums.txt
+          DMG_SHA=$(shasum -a 256 Wort.dmg | awk '{print $1}')
+          echo "DMG_SHA256=${DMG_SHA}" >> "$GITHUB_ENV"
           {
-            echo "## Wort CI build"
+            echo "## Wort ${WORT_VERSION}"
             echo
             echo "- GitLab ref: \`${GITLAB_REF}\`"
             echo "- GitLab SHA: \`${SOURCE_SHA}\`"
             echo "- GitHub run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            echo "- Homebrew: \`brew tap atadatcu/wort && brew install --cask wort\`"
             echo
             echo "### SHA256"
             echo '```'
@@ -121,15 +129,63 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: wort-${{ github.run_number }}-${{ env.SOURCE_SHA_SHORT }}
-          name: Wort ${{ env.GITLAB_REF }} (${{ env.SOURCE_SHA_SHORT }})
+          # Homebrew-friendly: v123 → cask version "123"
+          tag_name: v${{ env.WORT_VERSION }}
+          name: Wort ${{ env.WORT_VERSION }} (${{ env.SOURCE_SHA_SHORT }})
           body_path: src/release-body.md
           files: |
             src/Wort.app.zip
             src/Wort.dmg
             src/checksums.txt
           draft: false
-          prerelease: true
+          prerelease: false
+          make_latest: true
           generate_release_notes: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Optional: auto-bump https://github.com/atadatcu/homebrew-wort
+      # Create secret HOMEBREW_TAP_TOKEN (PAT with contents:write on that repo).
+      - name: Bump Homebrew cask
+        if: ${{ secrets.HOMEBREW_TAP_TOKEN != '' }}
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          git clone --depth 1 \
+            "https://x-access-token:${TAP_TOKEN}@github.com/atadatcu/homebrew-wort.git" tap
+          cd tap
+          mkdir -p Casks
+          cat > Casks/wort.rb <<EOF
+          cask "wort" do
+            version "${WORT_VERSION}"
+            sha256 "${DMG_SHA256}"
+
+            url "https://github.com/${{ github.repository }}/releases/download/v#{version}/Wort.dmg"
+            name "Wort"
+            desc "Local-first terminal (fork of Warp Lite / WarpOss)"
+            homepage "https://gitlab.com/adatcu/wort"
+
+            app "Wort.app"
+
+            livecheck do
+              url "https://github.com/${{ github.repository }}/releases/latest"
+              regex(%r{href=.*?/tag/v?(\\d+(?:\\.\\d+)*)}i)
+            end
+
+            caveats <<~EOS
+              If macOS blocks the app (unsigned/unnotarized):
+                xattr -cr /Applications/Wort.app
+            EOS
+
+            zap trash: [
+              "~/Library/Application Support/dev.warp-lite.WarpLite",
+            ]
+          end
+          EOF
+          git config user.name "wort-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/wort.rb
+          git diff --staged --quiet && echo "No cask changes" && exit 0
+          git commit -m "wort ${WORT_VERSION}"
+          git push
